@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Site Watcher 🔍</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; background: #0f172a; color: #f1f5f9; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .card { background: #1e293b; border-radius: 16px; padding: 40px; width: 100%; max-width: 480px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+    h1 { font-size: 28px; margin-bottom: 8px; }
+    p.sub { color: #94a3b8; margin-bottom: 28px; }
+    label { display: block; margin-bottom: 6px; font-size: 14px; color: #cbd5e1; }
+    input { width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #f1f5f9; font-size: 15px; margin-bottom: 18px; }
+    button { width: 100%; padding: 12px; border-radius: 8px; border: none; background: #16a34a; color: white; font-size: 16px; font-weight: 600; cursor: pointer; }
+    button:hover { background: #15803d; }
+    button:disabled { background: #334155; cursor: not-allowed; }
+    .status { margin-top: 24px; padding: 16px; border-radius: 10px; background: #0f172a; display: none; }
+    .status.show { display: block; }
+    .badge { display: inline-block; padding: 4px 12px; border-radius: 99px; font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+    .running { background: #1d4ed8; color: #bfdbfe; }
+    .success { background: #166534; color: #bbf7d0; }
+    .expired { background: #78350f; color: #fde68a; }
+    .stopped { background: #374151; color: #d1d5db; }
+    .info { font-size: 14px; color: #94a3b8; line-height: 1.8; }
+    .stop-btn { margin-top: 12px; background: #dc2626; }
+    .stop-btn:hover { background: #b91c1c; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>🔍 Site Watcher</h1>
+    <p class="sub">Monitor a website and get emailed when it comes back online.</p>
+
+    <label>Website URL</label>
+    <input type="url" id="url" placeholder="https://example.com" />
+
+    <label>Your Email</label>
+    <input type="email" id="email" placeholder="you@gmail.com" />
+
+    <label>Check Every (seconds)</label>
+    <input type="number" id="interval" value="30" min="10" />
+
+    <label>Monitor For (minutes)</label>
+    <input type="number" id="duration" value="60" min="1" />
+
+    <button id="startBtn" onclick="startMonitoring()">Start Monitoring</button>
+
+    <div class="status" id="statusBox">
+      <span class="badge" id="badge">running</span>
+      <div class="info" id="info"></div>
+      <button class="stop-btn" id="stopBtn" onclick="stopMonitoring()">Stop Monitoring</button>
+    </div>
+  </div>
+
+  <script>
+    let sessionId = null;
+    let pollInterval = null;
+
+    async function startMonitoring() {
+      const url = document.getElementById('url').value.trim();
+      const email = document.getElementById('email').value.trim();
+      const interval = document.getElementById('interval').value;
+      const duration = document.getElementById('duration').value;
+
+      if (!url || !email) return alert('Please fill in URL and Email.');
+
+      document.getElementById('startBtn').disabled = true;
+      document.getElementById('startBtn').textContent = 'Starting...';
+
+      try {
+        const res = await fetch('/api/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, email, interval, duration })
+        });
+        const data = await res.json();
+        if (!res.ok) return alert(data.error);
+
+        sessionId = data.sessionId;
+        document.getElementById('statusBox').classList.add('show');
+        document.getElementById('startBtn').textContent = 'Monitoring...';
+        pollStatus();
+        pollInterval = setInterval(pollStatus, 5000);
+      } catch (e) {
+        alert('Failed to start. Try again.');
+        document.getElementById('startBtn').disabled = false;
+        document.getElementById('startBtn').textContent = 'Start Monitoring';
+      }
+    }
+
+    async function pollStatus() {
+      if (!sessionId) return;
+      try {
+        const res = await fetch(`/api/status/${sessionId}`);
+        const data = await res.json();
+
+        const badge = document.getElementById('badge');
+        badge.textContent = data.status;
+        badge.className = `badge ${data.status}`;
+
+        document.getElementById('info').innerHTML = `
+          <b>URL:</b> ${data.url}<br>
+          <b>Email:</b> ${data.email}<br>
+          <b>Checks done:</b> ${data.checkCount}<br>
+          <b>Time remaining:</b> ${Math.floor(data.remainingSeconds / 60)}m ${data.remainingSeconds % 60}s
+        `;
+
+        if (data.status !== 'running') {
+          clearInterval(pollInterval);
+          document.getElementById('stopBtn').style.display = 'none';
+          document.getElementById('startBtn').disabled = false;
+          document.getElementById('startBtn').textContent = 'Start New Monitor';
+          if (data.status === 'success') alert('✅ Site is back online! Email sent!');
+        }
+      } catch(e) {}
+    }
+
+    async function stopMonitoring() {
+      if (!sessionId) return;
+      await fetch(`/api/stop/${sessionId}`, { method: 'POST' });
+      clearInterval(pollInterval);
+      document.getElementById('startBtn').disabled = false;
+      document.getElementById('startBtn').textContent = 'Start Monitoring';
+    }
+  </script>
+</body>
+</html>
